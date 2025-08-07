@@ -2,7 +2,7 @@
   "name": "ai-code-coverage",
   "displayName": "AI Code Coverage",
   "description": "Analyze AI-generated vs human-written code in projects",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "engines": {
     "vscode": "^1.102.0"
   },

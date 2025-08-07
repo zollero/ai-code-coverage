@@ -1,142 +1,4 @@
-import * as vscode from 'vscode';
-import { AICodeAnalyzer } from './analyzer';
-import { ProjectAnalysis, AICodeAnalysis } from './types';
-
-export class WorkspaceAnalyzer {
-    private analyzer: AICodeAnalyzer;
-    private currentAnalysis: ProjectAnalysis | null = null;
-    private analysisCache: Map<string, AICodeAnalysis> = new Map();
-
-    constructor() {
-        this.analyzer = new AICodeAnalyzer();
-    }
-
-    async analyzeWorkspace(): Promise<ProjectAnalysis | null> {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
-            vscode.window.showErrorMessage('没有打开的工作区');
-            return null;
-        }
-
-        const workspaceFolder = workspaceFolders[0];
-        const projectPath = workspaceFolder.uri.fsPath;
-
-        try {
-            // 显示进度
-            return await vscode.window.withProgress({
-                location: vscode.ProgressLocation.Notification,
-                title: 'AI代码覆盖率分析',
-                cancellable: true
-            }, async (progress, token) => {
-                progress.report({ increment: 0, message: '正在读取 .gitignore 并扫描项目文件...' });
-
-                const analysis = await this.analyzer.analyzeProject(projectPath);
-                
-                if (token.isCancellationRequested) {
-                    return null;
-                }
-
-                progress.report({ 
-                    increment: 50, 
-                    message: `正在分析 ${analysis.fileAnalyses.length} 个代码文件...` 
-                });
-
-                // 缓存文件分析结果
-                for (const fileAnalysis of analysis.fileAnalyses) {
-                    this.analysisCache.set(fileAnalysis.filePath, fileAnalysis);
-                }
-
-                progress.report({ increment: 100, message: '分析完成' });
-
-                this.currentAnalysis = analysis;
-                
-                // 显示分析结果摘要
-                vscode.window.showInformationMessage(
-                    `分析完成！扫描了 ${analysis.analyzedFiles} 个文件，AI代码比例: ${analysis.overallAiPercentage}%`
-                );
-                
-                return analysis;
-            });
-        } catch (error) {
-            vscode.window.showErrorMessage(`分析失败: ${error}`);
-            return null;
-        }
-    }
-
-    async analyzeCurrentFile(): Promise<AICodeAnalysis | null> {
-        const activeEditor = vscode.window.activeTextEditor;
-        if (!activeEditor) {
-            vscode.window.showErrorMessage('没有活动的编辑器');
-            return null;
-        }
-
-        const filePath = activeEditor.document.uri.fsPath;
-        
-        // 检查缓存
-        if (this.analysisCache.has(filePath)) {
-            const cachedAnalysis = this.analysisCache.get(filePath)!;
-            // 检查文件是否被修改（简单的时间戳检查）
-            const document = activeEditor.document;
-            if (!document.isDirty) {
-                return cachedAnalysis;
-            }
-        }
-
-        try {
-            const analysis = await this.analyzer.analyzeFile(filePath);
-            this.analysisCache.set(filePath, analysis);
-            return analysis;
-        } catch (error) {
-            vscode.window.showErrorMessage(`分析当前文件失败: ${error}`);
-            return null;
-        }
-    }
-
-    getCurrentAnalysis(): ProjectAnalysis | null {
-        return this.currentAnalysis;
-    }
-
-    getFileAnalysis(filePath: string): AICodeAnalysis | null {
-        return this.analysisCache.get(filePath) || null;
-    }
-
-    clearCache(): void {
-        this.analysisCache.clear();
-        this.currentAnalysis = null;
-    }
-
-    async showReport(): Promise<void> {
-        if (!this.currentAnalysis) {
-            vscode.window.showInformationMessage('请先分析项目');
-            return;
-        }
-
-        const analysis = this.currentAnalysis;
-        
-        // 创建报告面板
-        const panel = vscode.window.createWebviewPanel(
-            'aiCodeReport',
-            'AI代码覆盖率报告',
-            vscode.ViewColumn.One,
-            {
-                enableScripts: true,
-                retainContextWhenHidden: true
-            }
-        );
-
-        panel.webview.html = this.generateReportHTML(analysis);
-    }
-
-    private generateReportHTML(analysis: ProjectAnalysis): string {
-        const topAIFiles = analysis.fileAnalyses
-            .sort((a, b) => b.aiPercentage - a.aiPercentage)
-            .slice(0, 10);
-
-        const topHumanFiles = analysis.fileAnalyses
-            .sort((a, b) => a.aiPercentage - b.aiPercentage)
-            .slice(0, 10);
-
-        return `<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
@@ -386,25 +248,25 @@ export class WorkspaceAnalyzer {
     <div class="container">
         <div class="header">
             <h1>🤖 AI代码覆盖率分析报告</h1>
-            <p>项目路径: ${analysis.projectPath}</p>
-            <p>分析时间: ${analysis.timestamp.toLocaleString('zh-CN')}</p>
+            <p>项目路径: /Users/didi/workspace/code/github/ai-code-coverage</p>
+            <p>分析时间: 2025年7月22日 15:30:22</p>
         </div>
 
         <div class="stats-grid">
             <div class="stat-card">
-                <span class="stat-number">${analysis.totalFiles}</span>
+                <span class="stat-number">8</span>
                 <div class="stat-label">总文件数</div>
             </div>
             <div class="stat-card">
-                <span class="stat-number">${analysis.analyzedFiles}</span>
+                <span class="stat-number">8</span>
                 <div class="stat-label">已分析文件</div>
             </div>
             <div class="stat-card">
-                <span class="stat-number">${analysis.totalLines.toLocaleString()}</span>
+                <span class="stat-number">1,234</span>
                 <div class="stat-label">总代码行数</div>
             </div>
             <div class="stat-card">
-                <span class="stat-number">${analysis.overallAiPercentage}%</span>
+                <span class="stat-number">67%</span>
                 <div class="stat-label">AI代码比例</div>
             </div>
         </div>
@@ -414,19 +276,19 @@ export class WorkspaceAnalyzer {
             <div style="margin: 25px 0;">
                 <div class="progress-text">
                     <span>AI生成代码</span>
-                    <span class="progress-value">${analysis.aiGeneratedLines.toLocaleString()} 行 (${analysis.overallAiPercentage}%)</span>
+                    <span class="progress-value">827 行 (67%)</span>
                 </div>
                 <div class="progress-bar">
-                    <div class="progress-fill ai-fill" style="width: ${analysis.overallAiPercentage}%;"></div>
+                    <div class="progress-fill ai-fill" style="width: 67%;"></div>
                 </div>
             </div>
             <div style="margin: 25px 0;">
                 <div class="progress-text">
                     <span>人工编写代码</span>
-                    <span class="progress-value">${analysis.humanWrittenLines.toLocaleString()} 行 (${100 - analysis.overallAiPercentage}%)</span>
+                    <span class="progress-value">407 行 (33%)</span>
                 </div>
                 <div class="progress-bar">
-                    <div class="progress-fill human-fill" style="width: ${100 - analysis.overallAiPercentage}%;"></div>
+                    <div class="progress-fill human-fill" style="width: 33%;"></div>
                 </div>
             </div>
         </div>
@@ -434,42 +296,46 @@ export class WorkspaceAnalyzer {
         <div class="section">
             <h2>🔥 AI代码比例最高的文件</h2>
             <div class="file-list">
-                ${topAIFiles.map(file => `
-                    <div class="file-item">
-                        <span class="file-name">${this.getRelativePath(file.filePath, analysis.projectPath)}</span>
-                        <span class="file-percentage ${this.getPercentageClass(file.aiPercentage)}">${file.aiPercentage}%</span>
-                    </div>
-                `).join('')}
+                <div class="file-item">
+                    <span class="file-name">src/workspaceAnalyzer.ts</span>
+                    <span class="file-percentage ai-high">85%</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-name">src/analyzer.ts</span>
+                    <span class="file-percentage ai-high">78%</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-name">src/treeProvider.ts</span>
+                    <span class="file-percentage ai-high">72%</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-name">src/statusBar.ts</span>
+                    <span class="file-percentage ai-medium">65%</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-name">src/test-file.ts</span>
+                    <span class="file-percentage ai-medium">58%</span>
+                </div>
             </div>
         </div>
 
         <div class="section">
             <h2>✋ 人工编写比例最高的文件</h2>
             <div class="file-list">
-                ${topHumanFiles.map(file => `
-                    <div class="file-item">
-                        <span class="file-name">${this.getRelativePath(file.filePath, analysis.projectPath)}</span>
-                        <span class="file-percentage ${this.getPercentageClass(file.aiPercentage)}">${file.aiPercentage}% AI</span>
-                    </div>
-                `).join('')}
+                <div class="file-item">
+                    <span class="file-name">src/extension.ts</span>
+                    <span class="file-percentage ai-low">25% AI</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-name">src/types.ts</span>
+                    <span class="file-percentage ai-low">30% AI</span>
+                </div>
+                <div class="file-item">
+                    <span class="file-name">src/test/extension.test.ts</span>
+                    <span class="file-percentage ai-low">35% AI</span>
+                </div>
             </div>
         </div>
     </div>
 </body>
-</html>`;
-    }
-
-    private getRelativePath(filePath: string, projectPath: string): string {
-        return filePath.replace(projectPath, '').replace(/^[/\\]/, '');
-    }
-
-    private getPercentageClass(percentage: number): string {
-        if (percentage >= 70) {
-            return 'ai-high';
-        }
-        if (percentage >= 40) {
-            return 'ai-medium';
-        }
-        return 'ai-low';
-    }
-}
+</html>
